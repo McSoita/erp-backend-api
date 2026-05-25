@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
 const { query, withTransaction } = require("../config/db");
+const { normalizeRoleName, resolveRoleId } = require("../utils/roleCatalog");
 
 const SALT_ROUNDS = 10;
 const LEAVE_STATUSES = new Set(["Pending", "Approved", "Rejected"]);
@@ -84,6 +85,7 @@ function normalizeEnum(value, allowedValues, fieldName) {
 async function registerEmployee(data) {
   return withTransaction(async (client) => {
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
+    const roleId = await resolveRoleId(client, data.role ?? data.role_id);
 
     const userResult = await client.query(
       `
@@ -101,7 +103,7 @@ async function registerEmployee(data) {
         data.username,
         passwordHash,
         data.email,
-        data.role_id || null,
+        roleId,
         data.is_active ?? true,
       ]
     );
@@ -143,8 +145,16 @@ async function registerEmployee(data) {
 async function login(username, password) {
   const result = await query(
     `
-      SELECT id, username, password_hash, email, role_id, is_active
-      FROM users
+      SELECT
+        u.id,
+        u.username,
+        u.password_hash,
+        u.email,
+        u.role_id,
+        u.is_active,
+        r.name AS role_name
+      FROM users u
+      LEFT JOIN roles r ON r.id = u.role_id
       WHERE username = $1
     `,
     [username]
@@ -170,10 +180,13 @@ async function login(username, password) {
     throw createHttpError(500, "JWT_SECRET is not configured");
   }
 
+  const normalizedRole = normalizeRoleName(user.role_name) ?? user.role_name ?? null;
+
   const token = jwt.sign(
     {
       user_id: user.id,
       role_id: user.role_id,
+      role: normalizedRole,
     },
     process.env.JWT_SECRET,
     {
@@ -188,6 +201,8 @@ async function login(username, password) {
       username: user.username,
       email: user.email,
       role_id: user.role_id,
+      role: normalizedRole,
+      role_name: user.role_name ?? null,
       is_active: user.is_active,
     },
   };
