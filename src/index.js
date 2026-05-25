@@ -18,6 +18,8 @@ const hrRoutes = require("./hr/routes");
 const scmRoutes = require("./scm/routes");
 const crmRoutes = require("./crm/routes");
 const biRoutes = require("./bi/routes");
+const { ensureRoleCatalog } = require("./utils/roleCatalog");
+const { query } = require("./config/db");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,6 +42,17 @@ app.get("/", (req, res) => {
   res.json({ message: "ERP API is running" });
 });
 
-app.listen(PORT, () => {
-    (`Server is running on port ${PORT}`);
-});
+async function startServer() {
+  try {
+    await ensureRoleCatalog(query);
+
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("Failed to initialize role catalog", error);
+    process.exit(1);
+  }
+}
+
+startServer();

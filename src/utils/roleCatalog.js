@@ -45,6 +45,31 @@ const ROLE_MODULE_ACCESS = {
   },
 };
 
+const ROLE_RECORDS = {
+  Admin: [
+    { id: 113, name: "Admin", preferred: true },
+    { id: 1, name: "SuperAdmin" },
+  ],
+  Accountant: [{ id: 122, name: "Accountant", preferred: true }],
+  Auditor: [
+    { id: 123, name: "Auditor", preferred: true },
+    { id: 114, name: "Executive Board" },
+  ],
+  "Sales executive": [{ id: 115, name: "Sales executive", preferred: true }],
+  "Human Resource": [
+    { id: 120, name: "Human Resource", preferred: true },
+    { id: 121, name: "HR Assistant" },
+  ],
+  "Inventory Manager": [{ id: 124, name: "Inventory Manager", preferred: true }],
+  "Logistics manager": [{ id: 119, name: "Logistics manager", preferred: true }],
+  "Warehouse manager": [{ id: 118, name: "Warehouse manager", preferred: true }],
+  "Junior sales": [
+    { id: 116, name: "Junior sales", preferred: true },
+    { id: 2, name: "Sales Viewer" },
+    { id: 117, name: "Customer Support" },
+  ],
+};
+
 const CANONICAL_ROLE_NAME_LOOKUP = Object.fromEntries(
   Object.keys(ROLE_MODULE_ACCESS).map((roleName) => [roleName.toLowerCase(), roleName])
 );
@@ -75,6 +100,12 @@ const MODULE_PERMISSION_KEYS = {
 };
 
 const CANONICAL_ROLE_NAMES = Object.keys(ROLE_MODULE_ACCESS);
+const PREFERRED_ROLE_IDS = Object.fromEntries(
+  Object.entries(ROLE_RECORDS).map(([roleName, records]) => [
+    roleName,
+    records.find((record) => record.preferred)?.id ?? records[0]?.id ?? null,
+  ])
+);
 
 function normalizeRoleName(roleName) {
   const normalizedValue = String(roleName ?? "").trim();
@@ -119,7 +150,19 @@ function getRolePermissions(roleName) {
     return null;
   }
 
-  return buildPermissions(ROLE_MODULE_ACCESS[normalizedRoleName]);
+  const permissions = buildPermissions(ROLE_MODULE_ACCESS[normalizedRoleName]);
+
+  if (normalizedRoleName === "Admin") {
+    return ["*", ...permissions];
+  }
+
+  return permissions;
+}
+
+function createRoleResolutionError(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
 }
 
 async function ensureRoleCatalog(executor) {
@@ -133,19 +176,30 @@ async function ensureRoleCatalog(executor) {
   const roleRows = [];
 
   for (const roleName of CANONICAL_ROLE_NAMES) {
-    const permissions = getRolePermissions(roleName);
-    const result = await query(
-      `
-        INSERT INTO roles (name, permissions)
-        VALUES ($1, $2)
-        ON CONFLICT (name)
-        DO UPDATE SET permissions = EXCLUDED.permissions
-        RETURNING id, name
-      `,
-      [roleName, permissions]
-    );
+    const permissions = JSON.stringify(getRolePermissions(roleName));
+    const roleRecords = ROLE_RECORDS[roleName] ?? [];
 
-    roleRows.push(result.rows[0]);
+    for (const roleRecord of roleRecords) {
+      const result = await query(
+        `
+          INSERT INTO roles (id, name, permissions)
+          OVERRIDING SYSTEM VALUE
+          VALUES ($1, $2, $3::jsonb)
+          ON CONFLICT (id)
+          DO UPDATE SET
+            name = EXCLUDED.name,
+            permissions = EXCLUDED.permissions,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING id, name
+        `,
+        [roleRecord.id, roleRecord.name, permissions]
+      );
+
+      roleRows.push({
+        ...result.rows[0],
+        canonical_name: roleName,
+      });
+    }
   }
 
   return roleRows;
@@ -169,25 +223,31 @@ async function resolveRoleId(client, roleInput) {
   const normalizedRoleName = normalizeRoleName(roleInput);
 
   if (!normalizedRoleName) {
-    throw new Error("Unsupported role");
+    throw createRoleResolutionError("Unsupported role");
   }
 
   await ensureRoleCatalog(client);
+
+  const roleId = PREFERRED_ROLE_IDS[normalizedRoleName];
+
+  if (!roleId) {
+    throw createRoleResolutionError("Role not found");
+  }
 
   const result = await client.query(
     `
       SELECT id
       FROM roles
-      WHERE name = $1
+      WHERE id = $1
     `,
-    [normalizedRoleName]
+    [roleId]
   );
 
   if (result.rowCount === 0) {
-    throw new Error("Role not found");
+    throw createRoleResolutionError("Role not found");
   }
 
-  return result.rows[0].id;
+  return roleId;
 }
 
 module.exports = {
