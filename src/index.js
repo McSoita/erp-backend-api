@@ -18,8 +18,6 @@ const hrRoutes = require("./hr/routes");
 const scmRoutes = require("./scm/routes");
 const crmRoutes = require("./crm/routes");
 const biRoutes = require("./bi/routes");
-const { query } = require("./config/db");
-const { ensureRoleCatalog } = require("./utils/roleCatalog");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,15 +40,6 @@ app.get("/", (req, res) => {
   res.json({ message: "ERP API is running" });
 });
 
-async function startServer() {
-  await ensureRoleCatalog(query);
-
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-  });
-}
-
-startServer().catch((error) => {
-  console.error("Failed to start server", error);
-  process.exit(1);
+app.listen(PORT, () => {
+    (`Server is running on port ${PORT}`);
 });
