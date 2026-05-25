@@ -1,5 +1,26 @@
 const { query, withTransaction } = require("../config/db");
 
+const assetCategories = [
+  "Vehicle",
+  "Machinery",
+  "IT Equipment",
+  "HVAC",
+  "Facility",
+];
+const assetCategoryAliases = new Map([
+  ["tech", "IT Equipment"],
+  ["technology", "IT Equipment"],
+  ["it", "IT Equipment"],
+  ["it equipment", "IT Equipment"],
+  ["information technology", "IT Equipment"],
+]);
+const assetStatuses = [
+  "Operational",
+  "Degraded",
+  "Under Repair",
+  "Decommissioned",
+];
+
 function createHttpError(statusCode, message) {
   const error = new Error(message);
   error.statusCode = statusCode;
@@ -14,6 +35,39 @@ function normalizeMoney(value) {
   }
 
   return Number(amount.toFixed(2));
+}
+
+function normalizeAssetCategory(value) {
+  const rawCategory = String(value ?? "").trim();
+
+  if (!rawCategory) {
+    throw createHttpError(400, "category is required");
+  }
+
+  const normalizedCategory =
+    assetCategoryAliases.get(rawCategory.toLowerCase()) || rawCategory;
+
+  if (!assetCategories.includes(normalizedCategory)) {
+    throw createHttpError(
+      400,
+      `category must be one of: ${assetCategories.join(", ")}`
+    );
+  }
+
+  return normalizedCategory;
+}
+
+function normalizeAssetStatus(value) {
+  const normalizedStatus = String(value ?? "").trim() || "Operational";
+
+  if (!assetStatuses.includes(normalizedStatus)) {
+    throw createHttpError(
+      400,
+      `status must be one of: ${assetStatuses.join(", ")}`
+    );
+  }
+
+  return normalizedStatus;
 }
 
 async function createInvoice(data) {
@@ -308,11 +362,11 @@ async function getAssets() {
 async function createAsset(data) {
   const assetTag = String(data.asset_tag ?? "").trim();
   const name = String(data.name ?? "").trim();
-  const category = String(data.category ?? "").trim();
+  const category = normalizeAssetCategory(data.category);
   const purchaseDate = data.purchase_date || null;
   const initialCost = normalizeMoney(data.initial_cost || 0);
   const usefulLifeYears = Number(data.useful_life_years ?? 0);
-  const status = String(data.status ?? "").trim() || "Operational";
+  const status = normalizeAssetStatus(data.status);
 
   if (!assetTag) {
     throw createHttpError(400, "asset_tag is required");
@@ -320,10 +374,6 @@ async function createAsset(data) {
 
   if (!name) {
     throw createHttpError(400, "name is required");
-  }
-
-  if (!category) {
-    throw createHttpError(400, "category is required");
   }
 
   if (!purchaseDate) {
@@ -357,11 +407,11 @@ async function createAsset(data) {
 async function updateAsset(assetId, data) {
   const assetTag = String(data.asset_tag ?? "").trim();
   const name = String(data.name ?? "").trim();
-  const category = String(data.category ?? "").trim();
+  const category = normalizeAssetCategory(data.category);
   const purchaseDate = data.purchase_date || null;
   const initialCost = normalizeMoney(data.initial_cost || 0);
   const usefulLifeYears = Number(data.useful_life_years ?? 0);
-  const status = String(data.status ?? "").trim() || "Operational";
+  const status = normalizeAssetStatus(data.status);
 
   if (!assetTag) {
     throw createHttpError(400, "asset_tag is required");
@@ -369,10 +419,6 @@ async function updateAsset(assetId, data) {
 
   if (!name) {
     throw createHttpError(400, "name is required");
-  }
-
-  if (!category) {
-    throw createHttpError(400, "category is required");
   }
 
   if (!purchaseDate) {
@@ -414,11 +460,7 @@ async function updateAsset(assetId, data) {
 }
 
 async function updateAssetStatus(assetId, status) {
-  const normalizedStatus = String(status ?? "").trim();
-
-  if (!normalizedStatus) {
-    throw createHttpError(400, "status is required");
-  }
+  const normalizedStatus = normalizeAssetStatus(status);
 
   const result = await query(
     `

@@ -7,6 +7,20 @@ function handleError(res, error) {
     });
   }
 
+  if (error.constraint === "assets_category_check") {
+    return res.status(400).json({
+      message:
+        "Category must be one of: Vehicle, Machinery, IT Equipment, HVAC, Facility",
+    });
+  }
+
+  if (error.constraint === "assets_status_check") {
+    return res.status(400).json({
+      message:
+        "Status must be one of: Operational, Degraded, Under Repair, Decommissioned",
+    });
+  }
+
   if (error.code === "23503") {
     return res.status(400).json({
       message: "Invalid foreign key reference in finance request",
