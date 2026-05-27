@@ -119,6 +119,8 @@ async function listInventoryAlerts() {
         id,
         sku,
         name,
+        unit_price,
+        cost_price,
         stock_quantity,
         reorder_point,
         optimal_reorder_quantity
